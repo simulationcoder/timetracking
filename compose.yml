@@ -1,0 +1,64 @@
+services:
+  db:
+    image: timescale/timescaledb:2.14.2-pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    command: ["redis-server","--appendonly","yes"]
+    volumes: [ "redisdata:/data" ]
+
+  api:
+    build: ./api
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - exports:/app/exports  # CSV outputs
+
+  worker:
+    build: ./api
+    env_file: .env
+    command: ["celery","-A","tasks.celery_app","worker","-l","INFO"]
+    depends_on:
+      - api
+      - db
+      - redis
+    volumes:
+      - exports:/app/exports
+
+  web:
+    build: ./web
+    depends_on:
+      - api
+    environment:
+      - VITE_API_URL=/api
+    ports:
+      - "8080:80"
+
+  # Optional SSO (enable when ready)
+  # keycloak:
+  #   image: quay.io/keycloak/keycloak:25.0
+  #   command: ["start-dev","--http-port=8081"]
+  #   environment:
+  #     KEYCLOAK_ADMIN: admin
+  #     KEYCLOAK_ADMIN_PASSWORD: admin
+  #   ports: [ "8081:8081" ]
+
+volumes:
+  pgdata:
+  redisdata:
+  exports:
