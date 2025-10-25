@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate, Outlet } from 'react-router-dom'
 
-import './theme.css'
-import { apiFetch } from './api/client.js'
-import { useAuth } from './context/AuthContext.jsx'
+import '../theme.css'
+import { apiFetch } from '../api/client.js'
+import { useAuth } from '../context/AuthContext.jsx'
 
 const NAV_ITEMS = [
   { key: 'timesheets', label: 'Timesheets', to: '/' },
@@ -1301,7 +1301,7 @@ function PermissionsPage() {
   )
 }
 
-export default function App() {
+export default function LegacyApp() {
   return (
     <Routes>
       <Route path="/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
@@ -1316,6 +1316,9 @@ export default function App() {
     </Routes>
   )
 }
+
+
+export { ProtectedRoute, PublicOnlyRoute, PanelRoute }
 
 // Helper utilities for timesheet view
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -1366,3 +1369,4 @@ function formatWeekLabel(weekStart) {
   const d = new Date(`${weekStart}T00:00:00`)
   return `Week of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
 }
+

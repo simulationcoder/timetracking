@@ -2,7 +2,7 @@ import os
 from datetime import date, datetime
 from typing import Optional, List
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Response, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -16,7 +16,13 @@ from tasks import export_timesheets_task_entrypoint
 from services import ensure_role, assign_roles, set_user_panels, AVAILABLE_PANELS
 from management import router as management_router
 from auth import router as auth_router
-from security import require_panel, require_any_panel, get_current_active_user, hash_password
+from security import (
+    require_panel,
+    require_any_panel,
+    require_employee_panel,
+    get_current_active_user,
+    hash_password,
+)
 
 app = FastAPI(title="Timesheet API", version="0.1.0")
 app.include_router(auth_router)
@@ -29,10 +35,24 @@ class ProjectIn(BaseModel):
     is_billable: bool = True
     team_id: Optional[int] = None
 
+
+class ProjectUpdateIn(BaseModel):
+    name: Optional[str] = None
+    client: Optional[str] = None
+    is_billable: Optional[bool] = None
+    team_id: Optional[int] = None
+
+
 class ActivityIn(BaseModel):
     code: str
     description: Optional[str] = None
     project_id: int
+
+
+class ActivityUpdateIn(BaseModel):
+    code: Optional[str] = None
+    description: Optional[str] = None
+    project_id: Optional[int] = None
 
 class TimesheetIn(BaseModel):
     week_start: date
@@ -45,6 +65,15 @@ class TimeEntryIn(BaseModel):
     hours: float
     notes: Optional[str] = None
     billable: bool = True
+
+
+class TimeEntryUpdateIn(BaseModel):
+    project_id: Optional[int] = None
+    activity_id: Optional[int] = None
+    date: Optional[date] = None
+    hours: Optional[float] = None
+    notes: Optional[str] = None
+    billable: Optional[bool] = None
 
 class ApprovalDecisionIn(BaseModel):
     decision: str  # approve | reject
@@ -149,6 +178,58 @@ def list_projects(
         "team": {"id": i.team.id, "name": i.team.name} if i.team else None,
     } for i in items]
 
+@app.put("/projects/{project_id}")
+def update_project(
+    project_id: int,
+    payload: ProjectUpdateIn,
+    db: Session = Depends(get_session),
+    _: User = Depends(require_panel("manage-data")),
+):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if payload.name is not None:
+        project.name = payload.name
+    if payload.client is not None:
+        project.client = payload.client
+    if payload.is_billable is not None:
+        project.is_billable = payload.is_billable
+    if payload.team_id is not None:
+        if payload.team_id:
+            team = db.get(Team, payload.team_id)
+            if not team:
+                raise HTTPException(status_code=404, detail="Team not found")
+            project.team_id = team.id
+        else:
+            project.team_id = None
+
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return {
+        "id": project.id,
+        "name": project.name,
+        "client": project.client,
+        "is_billable": project.is_billable,
+        "team": {"id": project.team.id, "name": project.team.name} if project.team else None,
+    }
+
+
+@app.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project(
+    project_id: int,
+    db: Session = Depends(get_session),
+    _: User = Depends(require_panel("manage-data")),
+):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    db.delete(project)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 # Activities
 @app.post("/activities")
 def create_activity(payload: ActivityIn, db: Session = Depends(get_session), _: User = Depends(require_panel("manage-data"))):
@@ -178,12 +259,63 @@ def list_activities(db: Session = Depends(get_session), _: User = Depends(requir
         "project": {"id": i.project.id, "name": i.project.name} if i.project else None,
     } for i in items]
 
+
+@app.put("/activities/{activity_id}")
+def update_activity(
+    activity_id: int,
+    payload: ActivityUpdateIn,
+    db: Session = Depends(get_session),
+    _: User = Depends(require_panel("manage-data")),
+):
+    activity = db.get(Activity, activity_id)
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    if payload.project_id is not None:
+        if payload.project_id:
+            project = db.get(Project, payload.project_id)
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found")
+            activity.project_id = project.id
+        else:
+            activity.project_id = None
+
+    if payload.code is not None:
+        activity.code = payload.code
+    if payload.description is not None:
+        activity.description = payload.description
+
+    db.add(activity)
+    db.commit()
+    db.refresh(activity)
+    return {
+        "id": activity.id,
+        "code": activity.code,
+        "description": activity.description,
+        "project_id": activity.project_id,
+        "project": {"id": activity.project.id, "name": activity.project.name} if activity.project else None,
+    }
+
+
+@app.delete("/activities/{activity_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_activity(
+    activity_id: int,
+    db: Session = Depends(get_session),
+    _: User = Depends(require_panel("manage-data")),
+):
+    activity = db.get(Activity, activity_id)
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    db.delete(activity)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
 # Timesheets
 @app.post("/timesheets")
 def create_timesheet(
     payload: TimesheetIn,
     db: Session = Depends(get_session),
-    user: User = Depends(require_panel("timesheets")),
+    user: User = Depends(require_employee_panel("timesheets")),
 ):
     existing = (
         db.query(Timesheet)
@@ -212,7 +344,7 @@ def create_timesheet(
 @app.get("/timesheets")
 def list_timesheets(
     db: Session = Depends(get_session),
-    user: User = Depends(require_panel("timesheets")),
+    user: User = Depends(require_employee_panel("timesheets")),
 ):
     rows = (
         db.query(Timesheet)
@@ -230,7 +362,7 @@ def list_timesheets(
 def submit_timesheet(
     tid: int,
     db: Session = Depends(get_session),
-    user: User = Depends(require_panel("timesheets")),
+    user: User = Depends(require_employee_panel("timesheets")),
 ):
     timesheet = db.get(Timesheet, tid)
     if not timesheet or timesheet.user_id != user.id:
@@ -273,7 +405,7 @@ def submit_timesheet(
 def create_time_entry(
     payload: TimeEntryIn,
     db: Session = Depends(get_session),
-    user: User = Depends(require_panel("timesheets")),
+    user: User = Depends(require_employee_panel("timesheets")),
 ):
     timesheet = db.get(Timesheet, payload.timesheet_id)
     if not timesheet or timesheet.user_id != user.id:
@@ -309,7 +441,7 @@ def create_time_entry(
 def list_time_entries(
     tid: int,
     db: Session = Depends(get_session),
-    user: User = Depends(require_panel("timesheets")),
+    user: User = Depends(require_employee_panel("timesheets")),
 ):
     timesheet = db.get(Timesheet, tid)
     if not timesheet or timesheet.user_id != user.id:
@@ -329,9 +461,91 @@ def list_time_entries(
             "project_id": r.project_id,
             "activity_id": r.activity_id,
             "billable": r.billable,
+            "timesheet_id": r.timesheet_id,
         }
         for r in rows
     ]
+
+
+@app.put("/time-entries/{entry_id}")
+def update_time_entry(
+    entry_id: int,
+    payload: TimeEntryUpdateIn,
+    db: Session = Depends(get_session),
+    user: User = Depends(require_employee_panel("timesheets")),
+):
+    entry = db.get(TimeEntry, entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Time entry not found")
+    timesheet = db.get(Timesheet, entry.timesheet_id)
+    if not timesheet or timesheet.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Timesheet not found")
+    if timesheet.status != "draft":
+        raise HTTPException(status_code=400, detail="Timesheet is locked (not draft)")
+
+    if payload.project_id is not None:
+        project = db.get(Project, payload.project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        entry.project_id = project.id
+
+    if payload.activity_id is not None:
+        activity = db.get(Activity, payload.activity_id)
+        if not activity:
+            raise HTTPException(status_code=404, detail="Activity not found")
+        if payload.project_id is not None and activity.project_id != payload.project_id:
+            raise HTTPException(status_code=400, detail="Activity does not belong to the selected project")
+        entry.activity_id = activity.id
+
+    if payload.project_id is None and payload.activity_id is not None:
+        activity = db.get(Activity, payload.activity_id)
+        if activity and activity.project_id and activity.project_id != entry.project_id:
+            raise HTTPException(status_code=400, detail="Activity does not belong to the selected project")
+
+    if payload.date is not None:
+        entry.date = payload.date
+    if payload.hours is not None:
+        if payload.hours <= 0:
+            raise HTTPException(status_code=400, detail="Hours must be positive")
+        entry.hours = payload.hours
+    if payload.notes is not None:
+        entry.notes = payload.notes
+    if payload.billable is not None:
+        entry.billable = payload.billable
+
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return {
+        "id": entry.id,
+        "date": str(entry.date),
+        "hours": entry.hours,
+        "notes": entry.notes,
+        "project_id": entry.project_id,
+        "activity_id": entry.activity_id,
+        "billable": entry.billable,
+        "timesheet_id": entry.timesheet_id,
+    }
+
+
+@app.delete("/time-entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_time_entry(
+    entry_id: int,
+    db: Session = Depends(get_session),
+    user: User = Depends(require_panel("timesheets")),
+):
+    entry = db.get(TimeEntry, entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Time entry not found")
+    timesheet = db.get(Timesheet, entry.timesheet_id)
+    if not timesheet or timesheet.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Timesheet not found")
+    if timesheet.status != "draft":
+        raise HTTPException(status_code=400, detail="Timesheet is locked (not draft)")
+
+    db.delete(entry)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 # Approvals
 @app.post("/approvals/{tid}")
 def approve_timesheet(
@@ -410,6 +624,28 @@ def create_approver(payload: ApproverIn, db: Session = Depends(get_session), _: 
     set_user_panels(db, u, ["submitted"], replace=False)
     db.refresh(u)
     return {"id": u.id, "name": u.name, "email": u.email, "roles": sorted({ur.role.name for ur in u.user_roles})}
+
+
+@app.delete("/approvers/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_approver(user_id: int, db: Session = Depends(get_session), _: User = Depends(require_panel("manage-data"))):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Remove approver role and submitted panel while keeping others intact
+    remaining_roles = [role.role.name for role in user.user_roles if role.role.name != "approver"]
+    if not remaining_roles:
+        remaining_roles = ["employee"]
+
+    assign_roles(db, user, remaining_roles, replace=True)
+    user.role = remaining_roles[0]
+
+    remaining_panels = [panel.panel for panel in user.panels if panel.panel != "submitted"]
+    set_user_panels(db, user, remaining_panels, replace=True)
+
+    db.add(user)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 @app.get("/approvers/{approver_id}/timesheets")
 def list_submitted_timesheets(approver_id: int, db: Session = Depends(get_session), user: User = Depends(require_any_panel("submitted", "permissions"))):

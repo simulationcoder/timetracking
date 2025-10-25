@@ -42,6 +42,11 @@ class TeamCreate(BaseModel):
     member_ids: List[int] = []
 
 
+class TeamUpdate(BaseModel):
+    name: str | None = None
+    leader_id: int | None = None
+
+
 class TeamMemberPayload(BaseModel):
     user_id: int
 
@@ -163,6 +168,35 @@ def list_teams(
 ):
     teams = db.query(Team).order_by(Team.name.asc()).all()
     return [serialize_team(t) for t in teams]
+
+
+@router.put("/teams/{team_id}")
+def update_team(
+    team_id: int,
+    payload: TeamUpdate,
+    db: Session = Depends(get_session),
+    _: User = Depends(require_panel("manage-data")),
+):
+    team = db.get(Team, team_id)
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found.")
+
+    if payload.name is not None:
+        team.name = payload.name.strip()
+
+    if payload.leader_id is not None and payload.leader_id != team.leader_id:
+        new_leader = db.get(User, payload.leader_id)
+        if not new_leader:
+            raise HTTPException(status_code=404, detail="Leader not found.")
+        team.leader_id = new_leader.id
+        ensure_role(db, "approver")
+        assign_roles(db, new_leader, ["approver"], replace=False)
+        ensure_user_in_team(db, team, new_leader)
+
+    db.add(team)
+    db.commit()
+    db.refresh(team)
+    return serialize_team(team)
 
 
 @router.post("/teams/{team_id}/members", status_code=status.HTTP_201_CREATED)

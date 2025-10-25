@@ -55,9 +55,9 @@ export function AuthProvider({ children }) {
   }, [])
 
   const hasPanel = useCallback(
-    (panel) => {
+    (panel, { includeAdmin = true } = {}) => {
       if (!user) return false
-      if (user.role === 'admin') return true
+      if (includeAdmin && user.role === 'admin') return true
       return Array.isArray(user.panels) && user.panels.includes(panel)
     },
     [user]

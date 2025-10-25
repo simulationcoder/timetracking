@@ -83,9 +83,9 @@ def get_current_active_user(user: User = Depends(get_current_user)) -> User:
     return user
 
 
-def require_panel(panel: str):
+def require_panel(panel: str, *, allow_admin: bool = True):
     def dependency(user: User = Depends(get_current_active_user)) -> User:
-        if user.role == "admin":
+        if allow_admin and user.role == "admin":
             return user
         panel_names = {p.panel for p in user.panels}
         if panel not in panel_names:
@@ -95,12 +95,38 @@ def require_panel(panel: str):
     return dependency
 
 
-def require_any_panel(*panels: str):
+def require_any_panel(*panels: str, allow_admin: bool = True):
+    panels = tuple(panels)
+
+    def dependency(user: User = Depends(get_current_active_user)) -> User:
+        if allow_admin and user.role == "admin":
+            return user
+        panel_names = {p.panel for p in user.panels}
+        if not any(panel in panel_names for panel in panels):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        return user
+
+    return dependency
+
+
+def require_employee_panel(panel: str):
+    def dependency(user: User = Depends(get_current_active_user)) -> User:
+        if user.role == "admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrators cannot perform this action")
+        panel_names = {p.panel for p in user.panels}
+        if panel not in panel_names:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        return user
+
+    return dependency
+
+
+def require_employee_any_panel(*panels: str):
     panels = tuple(panels)
 
     def dependency(user: User = Depends(get_current_active_user)) -> User:
         if user.role == "admin":
-            return user
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrators cannot perform this action")
         panel_names = {p.panel for p in user.panels}
         if not any(panel in panel_names for panel in panels):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
