@@ -44,11 +44,13 @@ interface CatalogManagerProps {
   teams: AdminTeam[];
 }
 
+const UNASSIGNED_VALUE = "unassigned";
+
 type ProjectFormState = {
   name: string;
   client: string;
   is_billable: boolean;
-  team_id: string;
+  team_id: string | null;
 };
 
 type ActivityFormState = {
@@ -57,8 +59,15 @@ type ActivityFormState = {
   project_id: string;
 };
 
-const emptyProject = (): ProjectFormState => ({ name: "", client: "", is_billable: true, team_id: "" });
+type ActivityEditFormState = {
+  code: string;
+  description: string;
+  project_id: string | null;
+};
+
+const emptyProject = (): ProjectFormState => ({ name: "", client: "", is_billable: true, team_id: null });
 const emptyActivity = (): ActivityFormState => ({ code: "", description: "", project_id: "" });
+const emptyActivityEdit = (): ActivityEditFormState => ({ code: "", description: "", project_id: null });
 
 const CatalogManager = ({ projects, activities, teams }: CatalogManagerProps) => {
   const queryClient = useQueryClient();
@@ -69,18 +78,18 @@ const CatalogManager = ({ projects, activities, teams }: CatalogManagerProps) =>
   const [editProjectId, setEditProjectId] = useState<number | null>(null);
   const [editProjectForm, setEditProjectForm] = useState<ProjectFormState>(emptyProject());
   const [editActivityId, setEditActivityId] = useState<number | null>(null);
-  const [editActivityForm, setEditActivityForm] = useState<ActivityFormState>(emptyActivity());
+  const [editActivityForm, setEditActivityForm] = useState<ActivityEditFormState>(emptyActivityEdit());
 
   const createProject = useMutation({
     mutationFn: async () =>
       apiFetch("/projects", {
         method: "POST",
-        body: {
-          name: projectForm.name,
-          client: projectForm.client || null,
-          is_billable: projectForm.is_billable,
-          team_id: projectForm.team_id ? Number(projectForm.team_id) : null,
-        },
+          body: {
+            name: projectForm.name,
+            client: projectForm.client || null,
+            is_billable: projectForm.is_billable,
+            team_id: projectForm.team_id ? Number(projectForm.team_id) : null,
+          },
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
@@ -225,14 +234,19 @@ const CatalogManager = ({ projects, activities, teams }: CatalogManagerProps) =>
             <div className="space-y-2">
               <Label htmlFor="project-team">Team</Label>
               <Select
-                value={projectForm.team_id}
-                onValueChange={(value) => setProjectForm((prev) => ({ ...prev, team_id: value }))}
+                value={projectForm.team_id ?? UNASSIGNED_VALUE}
+                onValueChange={(value) =>
+                  setProjectForm((prev) => ({
+                    ...prev,
+                    team_id: value === UNASSIGNED_VALUE ? null : value,
+                  }))
+                }
               >
                 <SelectTrigger id="project-team">
                   <SelectValue placeholder="Unassigned" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Unassigned</SelectItem>
+                  <SelectItem value={UNASSIGNED_VALUE}>Unassigned</SelectItem>
                   {teamOptions.map((team) => (
                     <SelectItem key={team.value} value={team.value}>
                       {team.label}
@@ -339,7 +353,7 @@ const CatalogManager = ({ projects, activities, teams }: CatalogManagerProps) =>
                             name: project.name,
                             client: project.client ?? "",
                             is_billable: project.is_billable,
-                            team_id: project.team?.id ? String(project.team.id) : "",
+                            team_id: project.team?.id ? String(project.team.id) : null,
                           });
                         }}
                       >
@@ -412,7 +426,7 @@ const CatalogManager = ({ projects, activities, teams }: CatalogManagerProps) =>
                           setEditActivityForm({
                             code: activity.code,
                             description: activity.description ?? "",
-                            project_id: activity.project_id ? String(activity.project_id) : "",
+                            project_id: activity.project_id ? String(activity.project_id) : null,
                           });
                         }}
                       >
@@ -491,14 +505,19 @@ const CatalogManager = ({ projects, activities, teams }: CatalogManagerProps) =>
               <div className="space-y-2">
                 <Label htmlFor="edit-project-team">Team</Label>
                 <Select
-                  value={editProjectForm.team_id}
-                  onValueChange={(value) => setEditProjectForm((prev) => ({ ...prev, team_id: value }))}
+                  value={editProjectForm.team_id ?? UNASSIGNED_VALUE}
+                  onValueChange={(value) =>
+                    setEditProjectForm((prev) => ({
+                      ...prev,
+                      team_id: value === UNASSIGNED_VALUE ? null : value,
+                    }))
+                  }
                 >
                   <SelectTrigger id="edit-project-team">
                     <SelectValue placeholder="Unassigned" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Unassigned</SelectItem>
+                    <SelectItem value={UNASSIGNED_VALUE}>Unassigned</SelectItem>
                     {teamOptions.map((team) => (
                       <SelectItem key={team.value} value={team.value}>
                         {team.label}
@@ -529,7 +548,7 @@ const CatalogManager = ({ projects, activities, teams }: CatalogManagerProps) =>
           onOpenChange={(open) => {
             if (!open) {
               setEditActivityId(null);
-              setEditActivityForm(emptyActivity());
+              setEditActivityForm(emptyActivityEdit());
             }
           }}
         >
@@ -550,14 +569,19 @@ const CatalogManager = ({ projects, activities, teams }: CatalogManagerProps) =>
               <div className="space-y-2">
                 <Label htmlFor="edit-activity-project">Project</Label>
                 <Select
-                  value={editActivityForm.project_id}
-                  onValueChange={(value) => setEditActivityForm((prev) => ({ ...prev, project_id: value }))}
+                  value={editActivityForm.project_id ?? UNASSIGNED_VALUE}
+                  onValueChange={(value) =>
+                    setEditActivityForm((prev) => ({
+                      ...prev,
+                      project_id: value === UNASSIGNED_VALUE ? null : value,
+                    }))
+                  }
                 >
                   <SelectTrigger id="edit-activity-project">
                     <SelectValue placeholder="Unassigned" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Unassigned</SelectItem>
+                    <SelectItem value={UNASSIGNED_VALUE}>Unassigned</SelectItem>
                     {projects.map((project) => (
                       <SelectItem key={project.id} value={String(project.id)}>
                         {project.name}

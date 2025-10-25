@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,7 +8,9 @@ import TimesheetPage from "@/pages/Timesheet";
 import SettingsPage from "@/pages/Settings";
 import ApprovalsPage from "@/pages/Approvals";
 import PermissionsPage from "@/pages/admin/Permissions";
-import LegacyApp, { ProtectedRoute, PanelRoute } from "./legacy/LegacyApp.jsx";
+import LoginPage from "@/pages/auth/Login";
+import RegisterPage from "@/pages/auth/Register";
+import { ProtectedRoute, PanelRoute, PublicOnlyRoute } from "@/components/routing/RouteGuards";
 
 const queryClient = new QueryClient();
 
@@ -58,7 +60,23 @@ const App = () => (
             </ProtectedRoute>
           )}
         />
-        <Route path="/*" element={<LegacyApp />} />
+        <Route
+          path="/login"
+          element={(
+            <PublicOnlyRoute>
+              <LoginPage />
+            </PublicOnlyRoute>
+          )}
+        />
+        <Route
+          path="/register"
+          element={(
+            <PublicOnlyRoute>
+              <RegisterPage />
+            </PublicOnlyRoute>
+          )}
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </TooltipProvider>
   </QueryClientProvider>
