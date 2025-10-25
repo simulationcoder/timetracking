@@ -1,5 +1,6 @@
 """Seed initial data for the timesheet platform."""
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from db import get_engine
@@ -12,7 +13,7 @@ from models import (
     TimeEntry,
     User,
 )
-from security import hash_password
+from security import hash_password, verify_password
 from services import (
     AVAILABLE_PANELS,
     assign_roles,
@@ -23,11 +24,15 @@ from services import (
 
 
 def upsert_user(db: Session, *, name: str, email: str, password: str, roles: list[str], panels: list[str]):
-    email_lower = email.lower()
-    user = db.query(User).filter(User.email == email_lower).first()
-    password_hash = hash_password(password)
+    email_lower = email.strip().lower()
+    user = (
+        db.query(User)
+        .filter(func.lower(User.email) == email_lower)
+        .first()
+    )
 
     if user is None:
+        password_hash = hash_password(password)
         user = User(
             name=name,
             email=email_lower,
@@ -43,8 +48,11 @@ def upsert_user(db: Session, *, name: str, email: str, password: str, roles: lis
         if user.name != name:
             user.name = name
             updated = True
-        if password_hash and user.password_hash != password_hash:
-            user.password_hash = password_hash
+        if user.email != email_lower:
+            user.email = email_lower
+            updated = True
+        if password and not verify_password(password, user.password_hash or ""):
+            user.password_hash = hash_password(password)
             updated = True
         if not user.is_active:
             user.is_active = True
