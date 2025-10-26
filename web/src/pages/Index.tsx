@@ -12,6 +12,8 @@ import {
   Users,
   TrendingUp,
   Calendar,
+  UserCircle,
+  Mail,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext.jsx";
 import {
@@ -20,6 +22,7 @@ import {
   useProjects,
   useTimesheetEntries,
   useTimesheetForWeek,
+  useMyTeams,
 } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
 import type { TimesheetStatus } from "@/types/timesheet";
@@ -49,6 +52,8 @@ const Index = () => {
     user?.id,
     canApprove && !!user,
   );
+  const { data: myTeams = [], isLoading: loadingTeams } = useMyTeams();
+  const primaryTeam = myTeams[0];
 
   const totalHoursThisWeek = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
   const approvedCount = myTimesheets.filter((sheet) => sheet.status === "approved").length;
@@ -217,6 +222,47 @@ const Index = () => {
             </CardContent>
           </Card>
         </div>
+
+        <Card className="border-primary/20 bg-card/70">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              Your Team Lead
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loadingTeams ? (
+              <p className="text-sm text-muted-foreground">Loading team details…</p>
+            ) : primaryTeam ? (
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-center gap-3 rounded-lg border border-dashed border-primary/40 p-3">
+                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <UserCircle className="h-6 w-6" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{primaryTeam.leader?.name ?? "No lead assigned"}</p>
+                    <p className="text-xs text-muted-foreground">Team: {primaryTeam.name}</p>
+                    {primaryTeam.leader?.email && (
+                      <p className="text-xs text-muted-foreground">{primaryTeam.leader.email}</p>
+                    )}
+                  </div>
+                </div>
+                {primaryTeam.leader?.email ? (
+                  <Button variant="outline" asChild className="md:self-start">
+                    <a href={`mailto:${primaryTeam.leader.email}`} className="inline-flex items-center gap-2">
+                      <Mail className="h-4 w-4" />
+                      Email team lead
+                    </a>
+                  </Button>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                You&apos;re not currently assigned to a team. Reach out to your administrator if this seems incorrect.
+              </p>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </AppLayout>
   );

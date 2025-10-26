@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from dotenv import load_dotenv
 load_dotenv()
 
-from models import Base, User, Project, Activity, Timesheet, TimeEntry, Approval, Role, Team, UserRole
+from models import Base, User, Project, Activity, Timesheet, TimeEntry, Approval, Role, Team, UserRole, TeamMembership
 from db import get_engine, get_session
 from tasks import export_timesheets_task_entrypoint
 from services import ensure_role, assign_roles, set_user_panels, AVAILABLE_PANELS
@@ -82,6 +82,19 @@ class ApprovalDecisionIn(BaseModel):
 class ApproverIn(BaseModel):
     name: str
     email: EmailStr
+
+
+class TeamMemberOut(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+
+
+class TeamSummaryOut(BaseModel):
+    id: int
+    name: str
+    leader: Optional[TeamMemberOut] = None
+
 
 # ---------------- Routes ----------------
 @app.get("/health")
@@ -370,14 +383,30 @@ def submit_timesheet(
     if timesheet.status not in ("draft", "rejected"):
         raise HTTPException(status_code=400, detail="Timesheet already submitted or approved")
 
-    approver = (
-        db.query(User)
-        .join(UserRole, User.id == UserRole.user_id)
-        .join(Role, UserRole.role_id == Role.id)
-        .filter(func.lower(Role.name) == "approver")
-        .order_by(User.id.asc())
+    # Prefer the leader of the employee's first team as the approver.
+    team = (
+        db.query(Team)
+        .join(TeamMembership, TeamMembership.team_id == Team.id)
+        .filter(TeamMembership.user_id == user.id)
+        .order_by(Team.id.asc())
         .first()
     )
+
+    approver: User | None = None
+    if team and team.leader_id and team.leader_id != user.id:
+        candidate = db.get(User, team.leader_id)
+        if candidate and candidate.is_active:
+            approver = candidate
+
+    if approver is None:
+        approver = (
+            db.query(User)
+            .join(UserRole, User.id == UserRole.user_id)
+            .join(Role, UserRole.role_id == Role.id)
+            .filter(func.lower(Role.name) == "approver")
+            .order_by(User.id.asc())
+            .first()
+        )
     if not approver:
         raise HTTPException(status_code=400, detail="No approver configured")
 
@@ -398,6 +427,39 @@ def submit_timesheet(
     db.add(approval)
     db.commit()
     return {"timesheet_id": timesheet.id, "status": timesheet.status}
+
+
+@app.get("/me/team")
+def get_my_team(
+    db: Session = Depends(get_session),
+    user: User = Depends(get_current_active_user),
+):
+    memberships = (
+        db.query(TeamMembership)
+        .join(Team, Team.id == TeamMembership.team_id)
+        .filter(TeamMembership.user_id == user.id)
+        .order_by(Team.name.asc())
+        .all()
+    )
+    teams: list[TeamSummaryOut] = []
+
+    for membership in memberships:
+        team = membership.team
+        leader = team.leader
+        teams.append(
+            TeamSummaryOut(
+                id=team.id,
+                name=team.name,
+                leader=TeamMemberOut(
+                    id=leader.id,
+                    name=leader.name,
+                    email=leader.email,
+                )
+                if leader
+                else None,
+            ),
+        )
+    return {"teams": teams}
 
 
 # Time Entries

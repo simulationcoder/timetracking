@@ -10,6 +10,7 @@ import ApprovalsPage from "@/pages/Approvals";
 import PermissionsPage from "@/pages/admin/Permissions";
 import LoginPage from "@/pages/auth/Login";
 import RegisterPage from "@/pages/auth/Register";
+import DocumentationPage from "@/pages/Documentation";
 import { ProtectedRoute, PanelRoute, PublicOnlyRoute } from "@/components/routing/RouteGuards";
 
 const queryClient = new QueryClient();
@@ -76,6 +77,7 @@ const App = () => (
             </PublicOnlyRoute>
           )}
         />
+        <Route path="/docs" element={<DocumentationPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </TooltipProvider>

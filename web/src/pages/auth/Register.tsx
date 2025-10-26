@@ -92,6 +92,12 @@ const RegisterPage = () => {
               Sign in
             </Link>
           </p>
+          <p className="mt-2 text-center text-xs text-muted-foreground">
+            Need help?{" "}
+            <Link to="/docs" className="font-medium text-primary underline-offset-4 hover:underline">
+              Read the documentation
+            </Link>
+          </p>
         </CardContent>
       </Card>
     </div>
@@ -99,4 +105,3 @@ const RegisterPage = () => {
 };
 
 export default RegisterPage;
-

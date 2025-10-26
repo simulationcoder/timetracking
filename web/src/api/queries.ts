@@ -9,6 +9,7 @@ import type {
   TimeEntry,
   TimesheetSummary,
 } from "@/types/timesheet";
+import type { TeamSummary } from "@/types/team";
 
 const toISODate = (date: Date): string => date.toISOString().slice(0, 10);
 
@@ -64,6 +65,15 @@ export const useApprovers = (enabled = true) =>
     queryKey: ["approvers"],
     enabled,
     queryFn: async () => (await apiFetch("/approvers")) as ApproverSummary[],
+  });
+
+export const useMyTeams = () =>
+  useQuery<TeamSummary[]>({
+    queryKey: ["my-teams"],
+    queryFn: async () => {
+      const response = (await apiFetch("/me/team")) as { teams?: TeamSummary[] };
+      return response?.teams ?? [];
+    },
   });
 
 type CreateTimeEntryPayload = {

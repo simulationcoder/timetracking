@@ -148,6 +148,7 @@ def create_team(
     # Team leader is an approver
     ensure_role(db, "approver")
     assign_roles(db, leader, ["approver"], replace=False)
+    set_user_panels(db, leader, ["submitted"], replace=False)
     ensure_user_in_team(db, team, leader)
 
     member_ids = {mid for mid in payload.member_ids if mid != leader.id}
@@ -191,6 +192,7 @@ def update_team(
         team.leader_id = new_leader.id
         ensure_role(db, "approver")
         assign_roles(db, new_leader, ["approver"], replace=False)
+        set_user_panels(db, new_leader, ["submitted"], replace=False)
         ensure_user_in_team(db, team, new_leader)
 
     db.add(team)
