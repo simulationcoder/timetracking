@@ -46,7 +46,7 @@ def assign_roles(db: Session, user: User, role_names: Iterable[str], replace: bo
 
 def serialize_user(user: User) -> dict:
     """Return a JSON-serialisable representation of a user."""
-    return {
+    data = {
         "id": user.id,
         "name": user.name,
         "email": user.email,
@@ -54,6 +54,20 @@ def serialize_user(user: User) -> dict:
         "roles": sorted({ur.role.name for ur in user.user_roles}),
         "panels": sorted({panel.panel for panel in user.panels}),
     }
+    impersonator_id = getattr(user, "_impersonator_id", None)
+    if impersonator_id is not None:
+        data["impersonator_id"] = impersonator_id
+    return data
+
+
+def serialize_session(user: User, impersonator: User | None = None) -> dict:
+    """Represent the current session, including impersonation context if present."""
+    data = {
+        "user": serialize_user(user),
+        "impersonator": serialize_user(impersonator) if impersonator else None,
+        "is_impersonating": impersonator is not None,
+    }
+    return data
 
 
 def serialize_team(team: Team) -> dict:

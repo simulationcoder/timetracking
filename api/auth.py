@@ -15,11 +15,13 @@ from security import (
     set_access_cookie,
     clear_access_cookie,
     get_current_active_user,
+    get_current_session,
+    SessionPrincipal,
 )
 from services import (
     ensure_role,
     assign_roles,
-    serialize_user,
+    serialize_session,
     set_user_panels,
     AVAILABLE_PANELS,
 )
@@ -39,10 +41,19 @@ class LoginPayload(BaseModel):
     password: str
 
 
-def _create_session(response: Response, user: User) -> dict:
-    token = create_access_token(str(user.id), expires_delta=timedelta(minutes=60))
+class ImpersonatePayload(BaseModel):
+    user_id: int
+
+
+def _create_session(response: Response, user: User, *, impersonator: User | None = None) -> dict:
+    extra_claims = {}
+    if impersonator:
+        extra_claims["impersonator_id"] = impersonator.id
+    token = create_access_token(str(user.id), expires_delta=timedelta(minutes=60), extra_claims=extra_claims)
     set_access_cookie(response, token)
-    return {"user": serialize_user(user)}
+    if impersonator:
+        setattr(user, "_impersonator_id", impersonator.id)
+    return serialize_session(user, impersonator=impersonator)
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -101,5 +112,47 @@ def logout_user(response: Response):
 
 
 @router.get("/me")
-def get_me(user: User = Depends(get_current_active_user)):
-    return serialize_user(user)
+def get_me(session: SessionPrincipal = Depends(get_current_session)):
+    user = session.user
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
+    if session.impersonator:
+        setattr(user, "_impersonator_id", session.impersonator.id)
+    return serialize_session(user, impersonator=session.impersonator)
+
+
+@router.post("/impersonate")
+def impersonate_user(
+    payload: ImpersonatePayload,
+    response: Response,
+    db: Session = Depends(get_session),
+    session: SessionPrincipal = Depends(get_current_session),
+):
+    acting_admin = session.impersonator or session.user
+    if not acting_admin.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
+    if acting_admin.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required to impersonate users.")
+
+    target = db.get(User, payload.user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target user not found.")
+    if not target.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Target user is inactive.")
+    if target.id == acting_admin.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot impersonate yourself.")
+
+    return _create_session(response, target, impersonator=acting_admin)
+
+
+@router.post("/impersonate/stop")
+def stop_impersonation(
+    response: Response,
+    session: SessionPrincipal = Depends(get_current_session),
+):
+    if not session.impersonator:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You are not impersonating another user.")
+    admin_user = session.impersonator
+    if not admin_user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Original administrator is inactive.")
+    return _create_session(response, admin_user)

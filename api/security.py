@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import NamedTuple, Optional
 
 from fastapi import Depends, HTTPException, Request, Response, status
 from jose import JWTError, jwt
@@ -28,9 +28,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(subject: str, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(subject: str, expires_delta: Optional[timedelta] = None, extra_claims: Optional[dict] = None) -> str:
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=JWT_ACCESS_TOKEN_EXPIRE_MINUTES))
     payload = {"sub": subject, "exp": expire, "iat": datetime.utcnow()}
+    if extra_claims:
+        payload.update(extra_claims)
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
@@ -60,7 +62,13 @@ def _get_token_from_request(request: Request) -> str:
     return token
 
 
-def get_current_user(request: Request, db: Session = Depends(get_session)) -> User:
+class SessionPrincipal(NamedTuple):
+    user: User
+    impersonator: Optional[User]
+    payload: dict
+
+
+def get_current_session(request: Request, db: Session = Depends(get_session)) -> SessionPrincipal:
     token = _get_token_from_request(request)
     try:
         payload = decode_access_token(token)
@@ -71,10 +79,33 @@ def get_current_user(request: Request, db: Session = Depends(get_session)) -> Us
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication payload")
 
-    user = db.get(User, int(user_id))
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication payload")
+
+    user = db.get(User, user_id_int)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return user
+
+    impersonator = None
+    impersonator_id = payload.get("impersonator_id")
+    if impersonator_id is not None:
+        try:
+            impersonator_id_int = int(impersonator_id)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid impersonation context")
+        impersonator = db.get(User, impersonator_id_int)
+        if not impersonator:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Impersonator not found")
+        setattr(user, "_impersonator_id", impersonator.id)
+
+    return SessionPrincipal(user=user, impersonator=impersonator, payload=payload)
+
+
+def get_current_user(request: Request, db: Session = Depends(get_session)) -> User:
+    session_principal = get_current_session(request=request, db=db)
+    return session_principal.user
 
 
 def get_current_active_user(user: User = Depends(get_current_user)) -> User:

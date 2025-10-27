@@ -3,9 +3,14 @@ import { apiFetch } from "@/api/client";
 import type { AdminRole, AdminTeam, AdminUser } from "@/types/admin";
 import type { ApproverSummary } from "@/types/timesheet";
 
-export const useAdminUsers = () =>
+type AdminUsersOptions = {
+  enabled?: boolean;
+};
+
+export const useAdminUsers = ({ enabled = true }: AdminUsersOptions = {}) =>
   useQuery<AdminUser[]>({
     queryKey: ["admin-users"],
+    enabled,
     queryFn: async () => (await apiFetch("/management/users")) as AdminUser[],
   });
 

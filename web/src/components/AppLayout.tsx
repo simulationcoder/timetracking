@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import ImpersonationControls from "@/components/ImpersonationControls";
 import { useAuth } from "@/context/AuthContext.jsx";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,7 +32,7 @@ interface AppLayoutProps {
 const AppLayout = ({ children }: AppLayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, hasPanel, logout } = useAuth();
+  const { user, impersonator, isImpersonating, hasPanel, logout } = useAuth();
 
   const userRole = (user?.role ?? "employee").toLowerCase();
 
@@ -129,7 +130,14 @@ const AppLayout = ({ children }: AppLayoutProps) => {
                   <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                     <div>
                       <p className="text-sm font-medium">{user?.name}</p>
-                      <p className="text-xs capitalize text-muted-foreground">{userRole}</p>
+                      <p className="text-xs capitalize text-muted-foreground">
+                        {isImpersonating ? `Acting as ${userRole}` : userRole}
+                      </p>
+                      {isImpersonating && impersonator ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          Admin: {impersonator.name}
+                        </p>
+                      ) : null}
                     </div>
                     <Button variant="ghost" size="sm" onClick={logout}>
                       <LogOut className="mr-2 h-4 w-4" />
@@ -181,11 +189,19 @@ const AppLayout = ({ children }: AppLayoutProps) => {
               })}
             </nav>
             <div className="flex items-center gap-3">
-              <div className="hidden text-sm leading-tight md:flex md:flex-col md:items-end">
-                <span className="font-medium">{user?.name}</span>
+              {(userRole === "admin" || isImpersonating) ? (
+                <ImpersonationControls />
+              ) : null}
+              <div className="hidden max-w-[220px] text-sm leading-tight md:flex md:flex-col md:items-end">
+                <span className="truncate font-medium">{user?.name}</span>
                 <span className="capitalize text-muted-foreground">
-                  {userRole}
+                  {isImpersonating ? `Acting as ${userRole}` : userRole}
                 </span>
+                {isImpersonating && impersonator ? (
+                  <span className="text-[11px] text-muted-foreground">
+                    Admin: {impersonator.name}
+                  </span>
+                ) : null}
               </div>
               <Button
                 variant="outline"
