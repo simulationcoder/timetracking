@@ -17,8 +17,8 @@ docker compose up -d --build
 docker compose run --rm api python seed.py
 
 # 4) Open the app
-# API docs: http://localhost:8000/docs
-# Web UI:   http://localhost:8080
+# API docs: http://localhost:5701/docs
+# Web UI:   http://localhost:5700
 ```
 
 ## Features
